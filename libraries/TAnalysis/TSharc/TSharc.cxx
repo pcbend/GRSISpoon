@@ -1,11 +1,11 @@
-
-
 #include <TMath.h>
 
 #include "TSharc.h"
 
 
 ClassImp(TSharc)
+
+int TSharc::fCfdBuildDiff = 5;
 
 
 TSharc::TSharc()	{	}
@@ -28,7 +28,7 @@ void	TSharc::BuildHits(Option_t *opt)	{
   //
 
   TSharcHit sharchit;
-	int fCfdBuildDiff = 5; // largest acceptable time difference between events (clock ticks)  (50 ns)
+  //int fCfdBuildDiff = 5; // largest acceptable time difference between events (clock ticks)  (50 ns)
 
 	std::map<std::tuple<int,int,int>,int> hitmap;
 
@@ -38,8 +38,12 @@ void	TSharc::BuildHits(Option_t *opt)	{
 
       if(GetFront_DetectorNbr(i) == GetBack_DetectorNbr(j))	{ //check if same detector
 		
-				if(abs(GetFront_TimeCFD(i)-GetFront_TimeCFD(j)) > fCfdBuildDiff)
+				if(abs(GetFront_TimeCFD(i)-GetBack_TimeCFD(j)) > fCfdBuildDiff)
 					continue; // ensure there s front-back time correlation to protect against noise
+	
+				if(abs((float)GetFront_Charge(i)-(float)GetBack_Charge(j))/((float)GetFront_Charge(i) + (float)GetBack_Charge(j)) > 0.201)
+					continue; // ensure the difference between the detectred front charge
+							  // and back charge are with in 20% of each other.
 		
 				sharchit.SetDetector(GetFront_DetectorNbr(i));
 	
@@ -65,59 +69,37 @@ void	TSharc::BuildHits(Option_t *opt)	{
     }
   }
 
-	if(opt == "CLEAN")	{
+   if(opt == "CLEAN")	{
+	  //printf("\nINSIDE CLEAN IF!!!!!!!!\n");
+	  //fflush(stdout);
+  	  std::set<int> used_hits;	
+      std::map<std::tuple<int,int,int>,int>::iterator iter1;	
+      std::map<std::tuple<int,int,int>,int>::iterator iter2;	
 
-		// std::sort(sharc_hits.begin(),sharc_hits.end(),TSharcHits::Compare);
-
-
-  	//
-  	///  Do we have good hits??
-  	//
-/*
-		double sumfront, sumback;
-		double cdiff_frac = 0.05;
-
-
-  	for(int x=0;x<sharc_hits.size()-1;x++)  {
-  	  for(int y=x+1;y<sharc_hits.size();y++)  {
-  				// are hits on same detector   ? 
-				if(sharc_hits.GetDetectorNumber(y) != sharc_hits.GetDetectorNUmber(x) )	//{   //===> IS GOOD.	
-					break;
-				
-					// are hits on adjacent front strips	?
-				if( abs(sharc_hits.GetFrontStrip(y) - sharc_hits.GetFrontStrip(x) ) > 1 ) 
-					break;            // >1 ) ===> IS GOOD.
-	
-					// are hits on adjacent back strips	?
-				if( abs(sharc_hits.GetiBackStrip(y) - sharc_hits.GetBackStrip(x) ) >1 )  {//===> IS GOOD.
-					
-					if
-					{
-					}
-				}
-
-
-
-
-
-				// is the front and back of each hit time correlated		?
-				if( abs(sharc_hits.GetFrontCFD(x) - sharc_hits.GetBackCFD(x)) > 5 )
-			 		if( abs(sharc_hits.GetFrontCFD(y) - sharc_hits.GetBackCFD(y)) > 5 )
-						if( abs (((sharc_hits.GetFrontCFD(x)+sharc_hits.GetBackCFD(x))/2) -  ((sharc_hits.GetFrontCFD(y)+sharc_hits.GetBackCFD(y))/2)) > 5)     ===> IS GOOD.
-						// are the two hits time correlated		?
-	
-						// get combined front charge and back charge of both hits
-						sumfront = sharc_hits.GetFrontCharge(x)+sharc_hits.GetFrontCharge(y);
-						sumback = sharc_hits.GetBackCharge(x)+sharc_hits.GetBackCharge(y);
-				
-									
-					// is the deviation in combined charge between the fronts and backs large	?
-						if(2*abs(sumfront-sumback)/(sumfront+sumback)>cdiff_frac)) =====> THROW ONE OUT??
-	
-  	  }
-	  }
-*/
-	}
+      for(iter1 = hitmap.begin(); iter1 != hitmap.end(); iter1++)	{
+         for(iter2 = std::next(iter1); iter2 != hitmap.end(); iter2++)	{
+			printf("\titer1 < %02i | %02i | %02i >\n",std::get<0>(iter1->first),std::get<1>(iter1->first),std::get<2>(iter1->first));
+			printf("\titer2 < %02i | %02i | %02i >\n",std::get<0>(iter2->first),std::get<1>(iter2->first),std::get<2>(iter2->first));
+			printf("\t=============================\n");
+			if(std::get<0>(iter1->first) != std::get<0>(iter2->first))  ///  check detector numbers;
+         		break;
+         	if( abs(std::get<1>(iter1->first) - std::get<1>(iter2->first))<2) {  ///adjacent front strips.
+				if( (used_hits.count(iter1->second) == 0) &&  (used_hits.count(iter2->second) == 0) ) {
+					used_hits.insert(CombineHits(&sharc_hits.at(iter1->second),&sharc_hits.at(iter2->second),iter1->second,iter2->second));
+         		}
+			}
+         	else if( abs(std::get<2>(iter1->first) - std::get<2>(iter2->first))<2) {  ///adjacent backstrips strips.
+				if( (used_hits.count(iter1->second) == 0) &&  (used_hits.count(iter2->second) == 0) ) {
+					used_hits.insert(CombineHits(&sharc_hits.at(iter1->second),&sharc_hits.at(iter2->second),iter1->second,iter2->second));
+         		}
+			}
+			else	{
+				break;
+			}
+         }
+      }
+      RemoveHits(&sharc_hits,&used_hits);
+  }
 
 
 
@@ -146,9 +128,69 @@ void	TSharc::BuildHits(Option_t *opt)	{
 //}
 
 
+int TSharc::CombineHits(TSharcHit *hit1,TSharcHit *hit2,int position1,int position2 )	{
+	// used in the build hits routine to combine to hits 
+	// in adcent pixels into one hit.
+
+	if(!hit1 || !hit2)
+		return 0xffffffff;
+
+	float hit1_weight = hit1->GetFrontCharge()/(hit1->GetFrontCharge() + hit2->GetFrontCharge());
+	if(hit1_weight < 0.051)
+		return position1;
+	float hit2_weight = hit2->GetFrontCharge()/(hit1->GetFrontCharge() + hit2->GetFrontCharge());
+	if(hit2_weight < 0.051)
+		return position2;
+
+	if(hit1_weight > hit2_weight)	{
+		hit1->SetFrontCharge(hit1->GetFrontCharge() + hit2->GetFrontCharge());		
+		hit1->SetBackCharge(hit1->GetBackCharge() + hit2->GetBackCharge());		
+		TVector3 newposition;
+		newposition.SetX(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		newposition.SetY(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		newposition.SetZ(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		hit1->SetPosition(newposition);
+		return position2;
+	}
+	else {
+		hit2->SetFrontCharge(hit1->GetFrontCharge() + hit2->GetFrontCharge());		
+		hit2->SetBackCharge(hit1->GetBackCharge() + hit2->GetBackCharge());		
+		TVector3 newposition;
+		newposition.SetX(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		newposition.SetY(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		newposition.SetZ(hit1->GetPosition().X()*hit1_weight + hit2->GetPosition().X()*hit2_weight);
+		hit2->SetPosition(newposition);
+		return position1;
+	}
+}
+
+void TSharc::RemoveHits(std::vector<TSharcHit> *hits,std::set<int> *to_remove)	{
+
+	std::set<int>::reverse_iterator iter;
+//	for(iter = to_remove->begin(); iter != to_remove->end(); iter++)	{
+//		if(*iter == 0xffffffff)
+//			continue;
+//		hits->erase(std::remove(hits->begin(),hits->end(),*iter ),hits->end());
+//	}
+	for(iter= to_remove->rbegin(); iter != to_remove->rend(); iter++)	{
+		if(*iter == 0xffffffff)
+			continue;
+		hits->erase(hits->begin()+*iter);
+
+	}
+}
+
+
+
+
+
+
+
+
 
 
 void TSharc::Clear(Option_t *option)	{
+
   //cout << "clearing " << endl;
   ClearData();
   sharc_hits.clear();

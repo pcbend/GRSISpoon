@@ -7,9 +7,11 @@
 #include <map>
 #ifndef __CINT__
 #include <tuple>
+#include <iterator>
+#include <algorithm>
 #endif
 #include <utility>
-
+#include <set>
 
 #include "TSharcData.h"
 #include "TSharcHit.h"
@@ -46,12 +48,13 @@ class TSharc : public TSharcData, public TNamed 	{
 //		virtual inline void SetBack( const UShort_t &DetNbr,const UShort_t &StripNbr,const Double_t &Energy, const Double_t &TimeCFD,const Double_t &TimeLED,const Double_t &Time = 0, const UInt_t &Charge = 0)
 //		virtual inline void SetPAD(  const UShort_t &DetNbr,const Double_t &Energy,  const Double_t &TimeCFD,const Double_t &TimeLED,const Double_t &Time = 0, const Int_t &Charge = 0)
 
-
-		
-
-
 	private: 
 		std::vector <TSharcHit> sharc_hits;
+
+		int CombineHits(TSharcHit*,TSharcHit*,int,int);				//!
+		void RemoveHits(std::vector<TSharcHit>*,std::set<int>*);	//!
+
+		static int fCfdBuildDiff; //!   // largest acceptable time difference between events (clock ticks)  (50 ns)
 
         
    ClassDef(TSharc,2)  // Sharc Analysis structure
